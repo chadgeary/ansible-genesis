@@ -1,0 +1,211 @@
+---
+- name: ansible-ldapauth
+  hosts: '{{ target }}'
+  vars:
+    ansible_python_interpreter: "{% if foreman is not defined %}/usr/bin/python{% elif foreman.operatingsystem_name.startswith('RedHat 5') %}/usr/bin/python2.6{% else %}/usr/bin/python{% endif %}"
+    adldapcheckpw: !vault |
+      $ANSIBLE_VAULT;1.1;AES256
+      ###############################################################
+      ###############################################################
+      ###############################################################
+  gather_facts: yes
+  become: true
+  become_user: root
+  tasks:
+    - name: ad_certificate
+      shell: |
+        echo "-----BEGIN CERTIFICATE-----
+        ###########################################################
+        -----END CERTIFICATE-----" > /etc/openldap/cacerts/ad.pem
+ 
+    - name: sssd installation (not RHEl5)
+      package:
+        name: sssd
+        state: present
+      when: foreman is not defined or not foreman.operatingsystem_name.startswith('RedHat 5')
+
+    - name: auth-client-config installation (Ubuntu 1804)
+      package:
+        name: auth-client-config
+        state: present
+      when: foreman is not defined
+
+    - name: sssd conf
+      copy:
+        dest: "/etc/sssd/sssd.conf"
+        mode: 0600
+        owner: root
+        content: |
+          # sssd.conf
+          # ansible-sssd managed
+          [sssd]
+          config_file_version = 2
+          services = nss,pam
+          domains = chadg
+          debug_level = 5
+          
+          [nss]
+          filter_users = root,servergroup,avahi,haldaemon
+          filter_group = root,wheel
+          
+          [pam]
+          [domain/chadg]
+          entry_cache_timeout = 240
+          ldap_network_timeout = 2
+          ldap_id_use_start_tls = False
+          cache_credentials = True
+          id_provider = ldap
+          auth_provider = ldap
+          chpass_provider = ldap
+          ldap_schema = rfc2307bis
+          enumerate = True
+          
+          ldap_tls_reqcert = never
+          ldap_default_bind_dn = ldaplookup@chadg.net
+          ldap_default_authtok_type = password
+          ldap_default_authtok = ansiblevarldaplookuppw
+          ldap_tls_cacertdir = /etc/openldap/cacerts
+          ldap_referrals = False
+          
+          krb5_realm = chadg.net
+          krb5_server = ldap1.chadg.net
+          
+          ldap_force_upper_case_realm = True
+          ldap_user_object_class = user
+          ldap_group_object_class = group
+          ldap_user_home_directory = unixHomeDirectory
+          ldap_user_name = sAMAccountName
+          ldap_user_gecos = displayName
+          ldap_user_principal = userPrincipalName
+          
+          ldap_uri = ldaps://ldap1.chadg.net
+          ldap_backup_uri = ldaps://ldap2.chadg.net
+          ldap_search_base = dc=chadg,dc=net
+          access_provider = ldap
+          ldap_access_filter = memberOf=cn=ansiblevarhostname,dc=chadg,dc=net
+      when: foreman is not defined or not foreman.operatingsystem_name.startswith('RedHat 5')
+
+    - name: sssd conf variable 1
+      replace:
+        path: /etc/sssd/sssd.conf
+        regexp: 'ansiblevarldaplookuppw'
+        replace: '{{ ansiblevarldaplookuppw }}'
+      when: foreman is not defined or not foreman.operatingsystem_name.startswith('RedHat 5')
+
+    - name: sssd conf variable 2
+      replace:
+        path: /etc/sssd/sssd.conf
+        regexp: 'ansiblevarhostname'
+        replace: "{{ inventory_hostname_short }}"
+      when: foreman is not defined or not foreman.operatingsystem_name.startswith('RedHat 5')
+
+    - name: sssd service enabled / restarted
+      service:
+        name: sssd
+        state: restarted
+        enabled: yes
+      when: foreman is not defined or not foreman.operatingsystem_name.startswith('RedHat 5')
+
+    - name: set sssd configuration (RHEL6/7/8)
+      command: /usr/sbin/authconfig --enablesssd --enablesssdauth --enablepamaccess --enablelocauthorize --enablemkhomedir --update
+      when: foreman is defined and not foreman.operatingsystem_name.startswith('RedHat 5')
+
+    - name: set sssd configuration (Ubuntu 1804)
+      shell: |
+        echo "[sss]
+        nss_passwd=     passwd:         compat sss
+        nss_group=      group:          compat sss
+        nss_shadow=     shadow:         compat
+        nss_netgroup=   netgroup:       nis
+         
+        pam_auth=       auth           [success=3 default=ignore]      pam_unix.so nullok_secure try_first_pass
+                        auth           requisite                       pam_succeed_if.so uid >= 500 quiet
+                        auth           [success=1 default=ignore]      pam_sss.so use_first_pass
+                        auth           requisite                       pam_deny.so
+                        auth           required                        pam_permit.so
+         
+        pam_account=   account         required                        pam_unix.so
+                       account         sufficient                      pam_localuser.so
+                       account         sufficient                      pam_succeed_if.so uid < 500 quiet
+                       account         [default=bad success=ok user_unknown=ignore]    pam_sss.so
+                       account         required                        pam_permit.so
+         
+        pam_password=  password        sufficient                      pam_unix.so obscure sha512
+                       password        sufficient                      pam_sss.so use_authtok
+                       password        required                        pam_deny.so
+         
+        pam_session=   session         required                        pam_mkhomedir.so skel=/etc/skel/ umask=0077
+                       session         optional                        pam_keyinit.so  revoke
+                       session         required                        pam_limits.so
+                       session         [success=1 default=ignore]      pam_sss.so
+                       session         required                        pam_unix.so" > /etc/auth-client-config/profile.d/sss
+        /usr/sbin/auth-client-config -a -p sss
+      when: foreman is not defined
+
+    - name: /etc/ldap.conf (RHEL5)
+      shell: |
+        echo '## Connection
+        uri                     ldaps://ldap1.chadg.net
+        base                    dc=chadg,dc=net
+        scope                   sub
+        timelimit               6
+        idle_timelimit          240
+        
+        ## Reconnect policy
+        bind_policy             soft
+        
+        ## Bind credentials
+        binddn                  ldaplookup@chadg.net
+        bindpw                  {{ ansiblevarldaplookuppw }}
+        
+        ## Encryption (TLS)
+        ssl                     on
+        tls_cacertfile          /etc/openldap/cacerts/ad.pem
+        tls_checkpeer           no
+        tls_ciphers             TLSv1
+        
+        ## NSS attributes
+        nss_schema              rfc2307bis
+        
+        nss_base_passwd         ou=depts,dc=chadg,dc=net?sub
+        nss_base_shadow         ou=depts,dc=chadg,dc=net?sub
+        nss_base_group          dc=chadg,dc=net?sub
+        
+        nss_map_objectclass     posixAccount       User
+        nss_map_objectclass     shadowAccount      User
+        nss_map_objectclass     posixGroup         group
+        
+        nss_map_attribute       uid                sAMAccountName
+        nss_map_attribute       uidNumber          uidNumber
+        nss_map_attribute       gidNumber          gidNumber
+        nss_map_attribute       uniqueMember       member
+        nss_map_attribute       givenname          givenName
+        nss_map_attribute       ou                 description
+        nss_map_attribute       gecos              displayName
+        nss_map_attribute       homeDirectory      unixHomeDirectory
+        nss_map_attribute       loginShell         loginShell
+        nss_map_attribute       shadowLastChange   pwdLastSet
+        
+        nss_initgroups          backlink
+        nss_initgroups_ignoreusers root,ldap,named,avahi,haldaemon,servergroup
+        
+        ## PAM attributes
+        pam_login_attribute     sAMAccountName
+        pam_filter              objectClass=User
+        pam_password            ad
+        pam_member_attribute    member
+        pam_groupdn             cn=lx-{{ inventory_hostname_short }},dc=chadg,dc=net' > /etc/ldap.conf
+      when: foreman is defined and foreman.operatingsystem_name.startswith('RedHat 5')
+
+    - name: set ldap configuration (RHEL5)
+      command: /usr/sbin/authconfig --enableldap --enableldapauth --enablelocauthorize --enablecache --enablepamaccess --enablemkhomedir --update
+      when: foreman is defined and foreman.operatingsystem_name.startswith('RedHat 5')
+
+    - name: allow auth uid 300+ (RHEL7)
+      shell: |
+        grep --quiet "auth        requisite     pam_succeed_if.so uid >= 1000 quiet_success" /etc/pam.d/password-auth
+        if [ $? -eq 0 ]
+        then
+          sed -i -e 's#auth        requisite     pam_succeed_if.so uid >= 1000 quiet_success#auth        requisite     pam_succeed_if.so uid >= 300 quiet_success#g' /etc/pam.d/password-auth
+        fi
+      when: foreman is defined and foreman.operatingsystem_name.startswith('RedHat 7')

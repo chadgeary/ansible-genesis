@@ -1,0 +1,13 @@
+---
+- import_playbook: ansible-satellite/ansible-satellite.yml
+- import_playbook: ansible-log/ansible-log.yml
+- import_playbook: ansible-access/ansible-access.yml
+- import_playbook: ansible-sudoers/ansible-sudoers.yml
+- import_playbook: ansible-ldapauth/ansible-ldapauth.yml
+- import_playbook: ansible-penguins/ansible-penguins.yml
+- import_playbook: ansible-packages/ansible-packages.yml
+- import_playbook: ansible-package-updater/ansible-package-updater.yml
+- import_playbook: ansible-domain/ansible-domain.yml
+- import_playbook: ansible-hosts/ansible-hosts.yml
+- import_playbook: ansible-snmp/ansible-snmp.yml
+- import_playbook: ansible-time/ansible-time.yml

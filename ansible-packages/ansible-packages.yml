@@ -1,0 +1,162 @@
+---
+- name: ansible-packages
+  hosts: '{{ target }}'
+  vars:
+    ansible_python_interpreter: "{% if foreman is not defined %}/usr/bin/python{% elif foreman.operatingsystem_name.startswith('RedHat 5') %}/usr/bin/python2.6{% else %}/usr/bin/python{% endif %}"
+  gather_facts: yes
+  become: true
+  become_user: root
+  tasks:
+    - name: packages installed (RHEL8)
+      package:
+        name: "{{ packages }}"
+        state: present
+      vars:
+        packages:
+        - at
+        - bc
+        - bind-utils
+        - cifs-utils
+        - curl
+        - glibc
+        - iotop
+        - ksh
+        - lsof
+        - mlocate
+        - mtr
+        - net-tools
+        - net-snmp-utils
+        - nfs-utils
+        - nmap
+        - nmap-ncat
+        - pam
+        - policycoreutils
+        - rsync
+        - strace
+        - sos
+        - sysstat
+        - tcpdump
+        - telnet
+        - traceroute
+        - tmux
+        - util-linux
+        - wget
+        - vim-enhanced
+      when: ansible_facts['distribution'] == "RedHat" and (ansible_facts['distribution_major_version']|int == 8)
+
+    - name: packages installed (RHEL6/7)
+      package:
+        name: "{{ packages }}"
+        state: present
+      vars:
+        packages:
+        - at
+        - bc
+        - bind-utils
+        - cifs-utils
+        - curl
+        - glibc
+        - htop
+        - iftop
+        - iotop
+        - ksh
+        - lsof
+        - mlocate
+        - mtr
+        - ncdu
+        - net-tools
+        - net-snmp-utils
+        - nfs-utils
+        - nmap
+        - "{% if foreman is defined and foreman.operatingsystem_name.startswith('RedHat 6') %}nc{% elif foreman is defined and foreman.operatingsystem_name.startswith('RedHat 7' ) %}nmap-ncat{% endif %}"
+        - pam
+        - policycoreutils
+        - policycoreutils-python
+        - rsync
+        - screen
+        - strace
+        - sos
+        - sysstat
+        - tcpdump
+        - telnet
+        - traceroute
+        - tmux
+        - util-linux
+        - wget
+        - vim-enhanced
+      when: ansible_facts['distribution'] == "RedHat" and (ansible_facts['distribution_major_version']|int == 6 or ansible_facts['distribution_major_version']|int == 7)
+
+    - name: packages installed (Ubuntu)
+      package:
+        name: "{{ packages }}"
+        state: present
+      vars:
+        packages:
+        - apt
+        - at
+        - bc
+        - bsdutils
+        - cifs-utils
+        - nfs-common
+        - curl
+        - htop
+        - iftop
+        - iotop
+        - mlocate
+        - mtr
+        - ncdu
+        - netcat-openbsd
+        - net-tools
+        - snmp
+        - nmap
+        - parallel
+        - rsync
+        - sysstat
+        - screen
+        - strace
+        - tcpdump
+        - telnet
+        - traceroute
+        - tmux
+        - vim-nox
+      when: ansible_facts['distribution'] == "Debian"
+
+    - name: packages installed (RHEL5)
+      command: "yum install -y -e0 -d2 {{ packages }}"
+      vars:
+        packages:
+        - at
+        - bc
+        - bind-utils
+        - curl
+        - glibc
+        - htop
+        - iftop
+        - iotop
+        - ksh
+        - lsof
+        - mlocate
+        - mtr
+        - ncdu
+        - net-tools
+        - net-snmp-utils
+        - nfs-utils
+        - nmap
+        - pam
+        - policycoreutils
+        - rsync
+        - samba-client
+        - screen
+        - strace
+        - sos
+        - sysstat
+        - tcpdump
+        - telnet
+        - traceroute
+        - tmux
+        - util-linux
+        - wget
+        - vim-enhanced
+      when: ansible_facts['distribution'] == "RedHat" and ansible_facts['distribution_major_version']|int == 5
+      args:
+        warn: no

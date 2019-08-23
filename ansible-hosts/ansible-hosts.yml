@@ -1,0 +1,28 @@
+---
+- name: ansible-hosts
+  hosts: '{{ target }}'
+  gather_facts: yes
+  vars:
+    ansible_python_interpreter: "{% if foreman is not defined %}/usr/bin/python{% elif foreman.operatingsystem_name.startswith('RedHat 5') %}/usr/bin/python2.6{% else %}/usr/bin/python{% endif %}"
+    bastions: ['hq1.chadg.net', 'hq2.chadg.net']
+  become: true
+  become_user: root
+  tasks:
+    - name: backup /etc/hosts and /etc/sysconfig/network
+      shell: cp /etc/hosts /etc/hosts.ansible-backup.$(date +"%s"); cp /etc/sysconfig/network /etc/sysconfig/network.ansible-backup.$(date +"%s")
+      when: ansible_hostname not in bastions
+
+    - name: set /etc/hosts
+      shell: |
+        echo '# https://github.com/chadgeary
+        127.0.0.1   localhost localhost.localdomain localhost4 localhost4.localdomain4
+        ::1         localhost localhost.localdomain localhost6 localhost6.localdomain6
+        {{ ansible_default_ipv4.address }} {{ inventory_hostname }} {{ inventory_hostname_short }}' > /etc/hosts
+      when: ansible_hostname not in bastions
+
+    - name: set /etc/sysconfig/network
+      shell: |
+        echo '# https://github.com/chadgeary
+        NETWORKING=yes
+        HOSTNAME={{ inventory_hostname }}
+        GATEWAY={{ ansible_default_ipv4.gateway }}' > /etc/sysconfig/network

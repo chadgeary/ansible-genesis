@@ -1,0 +1,116 @@
+---
+- name: ansible-time
+  hosts: '{{ target }}'
+  gather_facts: yes
+  vars:
+    ansible_python_interpreter: "{% if foreman is not defined %}/usr/bin/python{% elif foreman.operatingsystem_name.startswith('RedHat 5') %}/usr/bin/python2.6{% else %}/usr/bin/python{% endif %}"
+    time_server: "{% if ansible_default_ipv4.address.startswith('10.') or ansible_default_ipv4.address.startswith('172.16') %}internaltime.chadg.net{% else %}externaltime.chadg.net{% endif %}"
+  become: true
+  become_user: root
+  tasks:
+    - name: chrony installed (RHEL8)
+      package:
+        name: "{{ packages }}"
+        state: present
+      vars:
+        packages:
+        - chrony
+      when: foreman is defined and foreman.operatingsystem_name.startswith('RedHat 8')
+
+    - name: set /etc/chrony.conf content (RHEL8)
+      shell: |
+        echo "# server (ansible-time)
+        server {{ time_server }}
+        
+        # Record the rate at which the system clock gains/losses time.
+        driftfile /var/lib/chrony/drift
+        
+        # Allow the system clock to be stepped in the first three updates
+        # if its offset is larger than 1 second.
+        makestep 1.0 3
+        
+        # Enable kernel synchronization of the real-time clock (RTC).
+        rtcsync
+        
+        # Specify file containing keys for NTP authentication.
+        keyfile /etc/chrony.keys
+        
+        # Get TAI-UTC offset and leap seconds from the system tz database.
+        leapsectz right/UTC
+        
+        # Specify directory for log files.
+        logdir /var/log/chrony" > /etc/chrony.conf
+      when: foreman is defined and foreman.operatingsystem_name.startswith('RedHat 8')
+
+    - name: chronyd restarted (RHEL8)
+      service:
+        name: chronyd
+        state: restarted
+      when: foreman is defined and foreman.operatingsystem_name.startswith('RedHat 8')
+
+    - name: chronyd disabled / stopped (RHEL5/6/7)
+      service:
+        name: chronyd
+        state: stopped
+        enabled: no
+      ignore_errors: yes
+      when: foreman is defined and not foreman.operatingsystem_name.startswith('RedHat 8') 
+
+    - name: ntp and ntpdate packages installed (Ubuntu 18.04 and RHEL6/7)
+      package:
+        name: "{{ packages }}"
+        state: present
+      vars:
+        packages:
+        - ntp
+        - ntpdate
+      when: foreman is not defined or foreman.operatingsystem_name.startswith('RedHat 6') or foreman.operatingsystem_name.startswith('RedHat 7')
+
+    - name: ntp and ntpdate packages installed (RHEL5)
+      command: "yum install -y -e0 -d2 {{item}}"
+      with_items: 
+        - ntp
+        - ntpdate
+      when: foreman is defined and foreman.operatingsystem_name.startswith('RedHat 5')
+      args:
+        warn: no
+
+    - name: ntpd enabled / stopped (not RHEL8)
+      service:
+        name: "{% if ansible_facts['os_family'] == 'Debian' %}ntp{% elif ansible_facts['os_family'] == 'RedHat' %}ntpd{% endif %}"
+        state: stopped
+        enabled: yes
+      when: foreman is not defined or not foreman.operatingsystem_name.startswith('RedHat 8')
+
+    - name: set /etc/ntp.conf content (not RHEL8)
+      shell: |
+        echo "# NTP
+        # https://github.com/chadgeary
+        driftfile /var/lib/ntp/drift
+        
+        # clients do not allow querying
+        restrict default kod nomodify notrap nopeer noquery
+        restrict -6 default kod nomodify notrap nopeer noquery
+        restrict 127.0.0.1
+        restrict -6 ::1
+        
+        # time server
+        server {{ time_server }}
+        restrict {{ time_server }} mask 255.255.255.255 nomodify notrap noquery" > /etc/ntp.conf
+      when: foreman is not defined or not foreman.operatingsystem_name.startswith('RedHat 8')
+
+    - name: set /etc/ntp.conf ownership/permissions (not RHEL8)
+      args:
+        warn: no
+      shell: chown root:root /etc/ntp.conf && chmod 644 /etc/ntp.conf
+      when: foreman is not defined or not foreman.operatingsystem_name.startswith('RedHat 8')
+
+    - name: sync time (not RHEL8)
+      shell: /usr/sbin/ntpdate "{{ time_server }}"
+      when: foreman is not defined or not foreman.operatingsystem_name.startswith('RedHat 8')
+
+    - name: ntpd started (not RHEL8)
+      service:
+        name: "{% if ansible_facts['os_family'] == 'Debian' %}ntp{% elif ansible_facts['os_family'] == 'RedHat' %}ntpd{% endif %}"
+        state: started
+      when: foreman is not defined or not foreman.operatingsystem_name.startswith('RedHat 8')

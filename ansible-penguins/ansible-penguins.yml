@@ -1,0 +1,40 @@
+---
+- name: ansible-penguins
+  hosts: '{{ target }}'
+  vars:
+    ansible_python_interpreter: "{% if foreman is not defined %}/usr/bin/python{% elif foreman.operatingsystem_name.startswith('RedHat 5') %}/usr/bin/python2.6{% else %}/usr/bin/python{% endif %}"
+    penguins:
+      - username: "chad"
+        pubkey: "ssh-rsa AAA###########SAMPLE"
+      - username: "ladmin"
+        pubkey: "ssh-rsa AAAA###################SAMPLE"
+
+  become: True
+  become_user: root
+  tasks:
+    - name: user profiles
+      user:
+        name: "{{ item.username }}"
+      with_items: "{{ penguins }}"
+
+    - name: authorized_keys file (not RHEL5)
+      authorized_key:
+        user: "{{ item.username }}"
+        state: present
+        key: "{{ item.pubkey }}"
+      with_items: "{{ penguins }}"
+      when: foreman is not defined or not foreman.operatingsystem_name.startswith('RedHat 5')
+
+    - name: authorized_keys file (RHEL5)
+      args:
+        warn: no
+      shell: |
+        grep --silent "{{ item.pubkey }}" /home/"{{ item.username }}"/.ssh/authorized_keys
+        if [[ $? -ne 0 ]]
+        then
+          echo "{{ item.pubkey }}" >> /home/"{{ item.username }}"/.ssh/authorized_keys 
+        fi
+        chown "{{ item.username }}" /home/"{{ item.username }}"/.ssh/authorized_keys
+        chmod 644 /home/"{{ item.username }}"/.ssh/authorized_keys
+      with_items: "{{ penguins }}"
+      when: foreman is defined and foreman.operatingsystem_name.startswith('RedHat 5')

@@ -1,0 +1,22 @@
+---
+- name: ansible-access
+  hosts: '{{ target }}'
+  gather_facts: no
+  vars:
+    ansible_python_interpreter: "{% if foreman is not defined %}/usr/bin/python{% elif foreman.operatingsystem_name.startswith('RedHat 5') %}/usr/bin/python2.6{% else %}/usr/bin/python{% endif %}"
+  become: true
+  become_user: root
+  tasks:
+    - name: access.conf content
+      shell: |
+        echo "# /etc/security/access.conf template
+        # github.com/chadgeary
+        # nonlocal users will require membership of the ldap/sssd
+        # AD group (e.g. lx-somehost1u)
+        +:ladmin root:ALL
+        -:ALL EXCEPT wheel admins EXCEPT cron crond" > /etc/security/access.conf
+
+    - name: access.conf owner and permissions
+      args:
+        warn: no
+      shell: chown root:root /etc/security/access.conf && chmod 6400 /etc/security/access.conf

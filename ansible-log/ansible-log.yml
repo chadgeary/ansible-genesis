@@ -1,0 +1,72 @@
+---
+- name: ansible-log
+  hosts: '{{ target }}'
+  gather_facts: yes
+  vars:
+    ansible_python_interpreter: "{% if foreman is not defined %}/usr/bin/python{% elif foreman.operatingsystem_name.startswith('RedHat 5') %}/usr/bin/python2.6{% else %}/usr/bin/python{% endif %}"
+    log_servers: ['log1', 'log2']
+  become: true
+  become_user: root
+  tasks:
+    - name: rsyslog.conf
+      shell: |
+        echo '# rsyslog configuration
+        # https://github.com/chadgeary
+        # Timestamp
+        $ActionFileDefaultTemplate RSYSLOG_TraditionalFileFormat
+        
+        # Kernel logging
+        $ModLoad imklog
+        
+        # Local system
+        $ModLoad imuxsock
+        
+        # Do not log private authentication messages!
+        *.info;mail.none;authpriv.none;cron.none                /var/log/messages
+        
+        # The authpriv file has restricted access.
+        authpriv.*                                              /var/log/secure
+        
+        # Log all the mail messages in one place.
+        mail.*                                                  -/var/log/maillog
+        
+        # Log cron stuff
+        cron.*                                                  /var/log/cron
+        
+        # Everybody gets emergency messages
+        *.emerg                                                 :omusrmsg:*
+        
+        # Save news errors of level crit and higher in a special file.
+        uucp,news.crit                                          /var/log/spooler
+        
+        # Save boot messages also to boot.log
+        local7.*                                                /var/log/boot.log
+        
+        # send logs
+        *.* @@log1.chadg.net:514
+        *.* @@log2.chadg.net:514' > /etc/rsyslog.conf
+      when: ansible_hostname not in log_servers
+
+    - name: rsyslog installed (non-RHEL5)
+      package:
+        name: "{{ packages }}"
+        state: present
+      vars:
+        packages:
+        - rsyslog
+      when: ansible_hostname not in log_servers and (foreman is not defined or not foreman.operatingsystem_name.startswith('RedHat 5'))
+
+    - name: rsyslog installed (RHEL5)
+      command: "yum install -y -e0 -d2 {{item}}"
+      with_items: 
+        - rsyslog
+      when: ansible_hostname not in log_servers and foreman is defined and foreman.operatingsystem_name.startswith('RedHat 5')
+      args:
+        warn: no
+
+    - name: rsyslog restarted/enabled (post-sync)
+      service:
+        name: rsyslog
+        state: restarted
+        enabled: yes
+      when: ansible_hostname not in log_servers

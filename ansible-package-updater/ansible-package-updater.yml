@@ -1,0 +1,93 @@
+---
+- name: ansible-package-updater
+  hosts: '{{ target }}'
+  gather_facts: yes
+  vars:
+    ansible_python_interpreter: "{% if foreman is not defined %}/usr/bin/python{% elif foreman.operatingsystem_name.startswith('RedHat 5') %}/usr/bin/python2.6{% else %}/usr/bin/python{% endif %}"
+  become: true
+  become_user: root
+  tasks:
+
+    - name: yum-cron (RHE6/7)
+      package:
+        name: yum-cron
+        state: present
+      when: ansible_facts['distribution'] == "RedHat" and ( ansible_facts['distribution_major_version']|int == 6 or ansible_facts['distribution_major_version']|int == 7 )
+
+    - name: yum-cron (RHEL5)
+      command: "yum install -y -e0 -d2 {{item}}"
+      with_items: 
+        - yum-cron
+      when: ansible_facts['distribution'] == "RedHat" and ansible_facts['distribution_major_version']|int == 5
+
+      args:
+        warn: no
+
+    - name: unattended-upgrades (Ubuntu)
+      package:
+        name: unattended-upgrades
+        state: present
+      when: ansible_facts['os_family'] == 'Debian'
+
+    - name: config (RHEL7)
+      shell: |
+        echo '[commands]
+        update_cmd = default
+        update_messages = yes
+        download_updates = yes
+        apply_updates = yes
+        random_sleep = 60
+        [emitters]
+        system_name = None
+        emit_via = stdio
+        output_width = 80
+        [email]
+        email_from = root@{{ inventory_hostname }}
+        email_to = chad@chadg.net
+        email_host = localhost
+        [groups]
+        group_list = None
+        group_package_types = mandatory, default
+        [base]
+        debuglevel = -2
+        mdpolicy = group:main' > /etc/yum/yum-cron.conf
+      when: ansible_facts['distribution'] == "RedHat" and ansible_facts['distribution_major_version']|int == 7
+
+    - name: config (RHEL6)
+      shell: |
+        echo 'YUM_PARAMETER=
+        CHECK_ONLY=no
+        CHECK_FIRST=no
+        DOWNLOAD_ONLY=no
+        RANDOMWAIT="60"
+        MAILTO=chad@chadg.net
+        MAILFROM=root@{{ inventory_hostname }}
+        DAYS_OF_WEEK="0" 
+        CLEANDAY="5"
+        SERVICE_WAITS=yes
+        SERVICE_WAIT_TIME=300' > /etc/sysconfig/yum-cron
+      when: ansible_facts['distribution'] == "RedHat" and ansible_facts['distribution_major_version']|int == 6
+
+    - name: config (RHEL5)
+      shell: |
+        echo 'CHECK_ONLY=no
+        DOWNLOAD_ONLY=no' > /etc/sysconfig/yum-cron
+      when: ansible_facts['distribution'] == "RedHat" and ansible_facts['distribution_major_version']|int == 5
+
+    - name: enable / config (Ubuntu)
+      shell: |
+        echo unattended-upgrades unattended-upgrades/enable_auto_updates boolean true | debconf-set-selections
+        dpkg-reconfigure -f noninteractive unattended-upgrades
+        echo 'Unattended-Upgrade::Allowed-Origins {
+                "${distro_id}:${distro_codename}";
+                "${distro_id}:${distro_codename}-security";
+                "${distro_id}ESM:${distro_codename}";
+                "${distro_id}:${distro_codename}-updates";
+        };
+        
+        Unattended-Upgrade::DevRelease "false";
+        Unattended-Upgrade::Mail "chad@chadg.net";
+        Unattended-Upgrade::MailOnlyOnError "true";
+        Unattended-Upgrade::Automatic-Reboot "false";
+        Unattended-Upgrade::SyslogEnable "true";' > /etc/apt/apt.conf.d/50unattended-upgrades
+      when: ansible_facts['distribution'] == "Ubuntu"

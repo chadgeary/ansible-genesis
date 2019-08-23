@@ -1,0 +1,33 @@
+---
+- name: ansible-sudoers
+  hosts: '{{ target }}'
+  gather_facts: yes
+  vars:
+    ansible_python_interpreter: "{% if foreman is not defined %}/usr/bin/python{% elif foreman.operatingsystem_name.startswith('RedHat 5') %}/usr/bin/python2.6{% else %}/usr/bin/python{% endif %}"
+  become: true
+  become_user: root
+  tasks:
+    - name: backup /etc/sudoers
+      shell: cp /etc/sudoers /etc/sudoers.ansible-backup.$(date +"%s")
+
+    - name: set /etc/sudoers
+      shell: |
+        echo '# sudoers allows particular users to run various commands as root
+        # https://github.com/chadgeary
+        
+        #Defaults    requiretty
+        Defaults    env_reset
+        Defaults    env_keep = "COLORS DISPLAY HOSTNAME HISTSIZE INPUTRC KDEDIR \
+                                LS_COLORS MAIL PS1 PS2 QTDIR USERNAME \
+                                LANG LC_ADDRESS LC_CTYPE LC_COLLATE LC_IDENTIFICATION \
+                                LC_MEASUREMENT LC_MESSAGES LC_MONETARY LC_NAME LC_NUMERIC \
+                                LC_PAPER LC_TELEPHONE LC_TIME LC_ALL LANGUAGE LINGUAS \
+                                _XKB_CHARSET XAUTHORITY"
+        
+        # local admin
+        root    ALL=(ALL)       ALL
+        servergroup     ALL=(ALL)       NOPASSWD: ALL
+        
+        # admins
+        %wheel          ALL=(ALL)       NOPASSWD: ALL
+        %admin       ALL=(ALL)       NOPASSWD: ALL' > /etc/sudoers

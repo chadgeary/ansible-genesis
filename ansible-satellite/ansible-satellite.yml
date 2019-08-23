@@ -1,0 +1,120 @@
+---
+- name: ansible-satellite
+  hosts: '{{ target }}'
+  gather_facts: yes
+  vars:
+    ansible_python_interpreter: "{% if foreman is not defined %}/usr/bin/python{% elif foreman.operatingsystem_name.startswith('RedHat 5') %}/usr/bin/python2.6{% else %}/usr/bin/python{% endif %}"
+    satellite_servers: ['satellite1']
+    satelliteregisterpw: !vault |
+      $ANSIBLE_VAULT;1.1;AES256
+      ###########################SAMPLE##############################
+  become: true
+  become_user: root
+  tasks:
+
+    - name: unregister from subscription-manager
+      shell: subscription-manager unregister ; subscription-manager clean ; subscription-manager remove --all
+      when: ansible_hostname not in satellite_servers and ansible_facts['os_family'] == 'RedHat'
+      ignore_errors: yes
+
+    - name: install katello key(s) (RHEL not EL5)
+      yum:
+        name: "{{ packages }}"
+        state: present
+      vars:
+        packages:
+        - http://satellite1.chadg.net/pub/katello-ca-consumer-latest.noarch.rpm
+      when: ansible_facts['os_family'] == 'RedHat' and not foreman.operatingsystem_name.startswith('RedHat 5')
+
+    - name: install katello key(s) (RHEL5)
+      shell: |
+        wget http://satellite1.chadg.net/pub/katello-ca-consumer-latest.noarch.rpm && rpm -Uvh katello-ca-consumer-latest.noarch.rpm
+        rm katello-ca-consumer-latest.noarch.rpm
+      when: ansible_facts['os_family'] == 'RedHat' and foreman.operatingsystem_name.startswith('RedHat 5')
+      args:
+        warn: no
+
+    - name: install product certificate (RHEL8)
+      shell: |
+        echo '-----BEGIN CERTIFICATE-----
+        ######### SAMPLE ##########
+        -----END CERTIFICATE-----' > /etc/pki/product-default/479.pem
+      when: ansible_facts['os_family'] == 'RedHat' and foreman.operatingsystem_name.startswith('RedHat 8')
+
+    - name: set subscriptions (RHEL8)
+      shell: |
+        subscription-manager register --auto-attach --username satelliteregisteruser --password '{{ satelliteregisterpw }}' --baseurl=https://satellite1.chadg.net/pulp/repos --org=chadg --environment={{ foreman.content_facet_attributes.lifecycle_environment_name }}/chadg
+        subscription-manager repos --enable rhel-8-for-x86_64-appstream-rpms
+        subscription-manager repos --enable rhel-8-for-x86_64-baseos-rpms
+        subscription-manager repos --enable rhel-8-for-x86_64-supplementary-rpms
+        subscription-manager repos --enable satellite-tools-6.5-for-rhel-8-x86_64-rpms
+      when: ansible_facts['os_family'] == 'RedHat' and foreman.operatingsystem_name.startswith('RedHat 8')
+
+    - name: install product certificate (RHEL7)
+      shell: |
+        echo '-----BEGIN CERTIFICATE-----
+        ############### SAMPLE ###############
+        -----END CERTIFICATE-----' > /etc/pki/product/69.pem
+      when: ansible_facts['os_family'] == 'RedHat' and foreman.operatingsystem_name.startswith('RedHat 7')
+
+    - name: set subscriptions (RHEL7)
+      shell: |
+        subscription-manager register --auto-attach --username satelliteregisteruser --password '{{ satelliteregisterpw }}' --baseurl=https://satellite1.chadg.net/pulp/repos --org=chadg --environment={{ foreman.content_facet_attributes.lifecycle_environment_name }}/chadg
+        subscription-manager repos --enable rhel-7-server-extras-rpms
+        subscription-manager repos --enable rhel-7-server-satellite-tools-6.5-rpms
+        subscription-manager repos --enable rhel-7-server-optional-rpms
+        subscription-manager attach --pool=$(subscription-manager list --pool-only --available --matches=EPEL) && subscription-manager repos --enable chadg_EPEL_EPEL7_x86_64
+        subscription-manager repos --disable chadg_EPEL_EPEL6_x86_64; subscription-manager repos --disable chadg_EPEL_EPEL5_x86_64
+      when: ansible_facts['os_family'] == 'RedHat' and foreman.operatingsystem_name.startswith('RedHat 7')
+
+    - name: install product certificate (RHEL6)
+      shell: |
+        echo '-----BEGIN CERTIFICATE-----
+        ############# SAMPLE #################
+        -----END CERTIFICATE-----' > /etc/pki/product/69.pem
+      when: ansible_facts['os_family'] == 'RedHat' and foreman.operatingsystem_name.startswith('RedHat 6')
+
+    - name: set subscriptions (RHEL6)
+      shell: |
+        subscription-manager register --auto-attach --username satelliteregisteruser --password '{{ satelliteregisterpw }}' --baseurl=https://satellite1.chadg.net/pulp/repos --org=chadg --environment={{ foreman.content_facet_attributes.lifecycle_environment_name }}/chadg
+        subscription-manager repos --enable rhel-6-server-extras-rpms
+        subscription-manager repos --enable rhel-6-server-satellite-tools-6.5-rpms
+        subscription-manager repos --enable rhel-6-server-optional-rpms
+        subscription-manager attach --pool=$(subscription-manager list --pool-only --available --matches=EPEL) && subscription-manager repos --enable chadg_EPEL_EPEL6_x86_64
+        subscription-manager repos --disable chadg_EPEL_EPEL7_x86_64; subscription-manager repos --disable chadg_EPEL_EPEL5_x86_64
+      when: ansible_facts['os_family'] == 'RedHat' and foreman.operatingsystem_name.startswith('RedHat 6')
+
+    - name: install product certificate (RHEL5)
+      shell: |
+        echo '-----BEGIN CERTIFICATE-----
+        ############# SAMPLE ################
+        -----END CERTIFICATE-----' > /etc/pki/product/69.pem
+        echo '-----BEGIN CERTIFICATE-----
+        ############## SAMPLE ###############
+        -----END CERTIFICATE----- > /etc/pki/product/204.pem'
+      when: ansible_facts['os_family'] == 'RedHat' and foreman.operatingsystem_name.startswith('RedHat 5')
+
+    - name: set subscriptions (RHEL5)
+      shell: |
+        subscription-manager register --auto-attach --username satelliteregisteruser --password '{{ satelliteregisterpw }}' --baseurl=https://satellite1.chadg.net/pulp/repos --org=chadg --environment={{ foreman.content_facet_attributes.lifecycle_environment_name }}/chadg
+        subscription-manager repos --enable rhel-5-server-els-satellite-tools-6.5-rpms
+        subscription-manager attach --pool=8adeedbb6bf16edd016c49c1474b1f2d && subscription-manager repos --enable chadg_EPEL_EPEL5_x86_64
+        subscription-manager repos --disable chadg_EPEL_EPEL7_x86_64; subscription-manager repos --disable chadg_EPEL_EPEL6_x86_64
+      when: ansible_facts['os_family'] == 'RedHat' and foreman.operatingsystem_name.startswith('RedHat 5')
+
+    - name: install katello packages (RHEL not EL5)
+      yum:
+        name: "{{ packages }}"
+        state: present
+      vars:
+        packages:
+        - katello-host-tools
+        - katello-agent
+      when: ansible_facts['os_family'] == 'RedHat' and not foreman.operatingsystem_name.startswith('RedHat 5')
+
+    - name: install katello packages (RHEL5)
+      shell: |
+        yum -y install katello-host-tools katello-agent
+      when: ansible_facts['os_family'] == 'RedHat' and foreman.operatingsystem_name.startswith('RedHat 5')
+      args:
+        warn: no
